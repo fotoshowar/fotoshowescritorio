@@ -126,7 +126,7 @@ public class GalleryDialog : Form
             ForeColor = TextMuted,
             BackColor = BgPrimary,
         };
-        _chkDate.CheckedChanged += (_, _) => _dtpEventDate.Enabled = _chkDate.Checked;
+        _chkDate.CheckedChanged += (_, _) => _dtpEventDate!.Enabled = _chkDate.Checked;
         py += 24;
 
         _dtpEventDate = new DateTimePicker
