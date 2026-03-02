@@ -60,6 +60,7 @@ public class BackendClient : IAsyncDisposable
 
             // Metadata
             form.Add(new StringContent(record.LocalPath), "local_path");
+            form.Add(new StringContent(Path.GetFileName(record.LocalPath)), "filename");
             form.Add(new StringContent(record.PathHash), "path_hash");
             form.Add(new StringContent(record.FacesDetected.ToString()), "faces_detected");
             form.Add(new StringContent(record.FileSize.ToString()), "file_size");
@@ -86,7 +87,11 @@ public class BackendClient : IAsyncDisposable
 
             var json = await resp.Content.ReadAsStringAsync(ct);
             using var doc = JsonDocument.Parse(json);
-            return doc.RootElement.GetProperty("photo_id").GetString();
+            // El backend retorna photo_id como int, no string
+            var photoIdEl = doc.RootElement.GetProperty("photo_id");
+            return photoIdEl.ValueKind == JsonValueKind.Number
+                ? photoIdEl.GetInt32().ToString()
+                : photoIdEl.GetString();
         }
         catch (Exception ex)
         {
@@ -183,13 +188,15 @@ public class BackendClient : IAsyncDisposable
         _ws?.Dispose();
         _ws = new ClientWebSocket();
 
-        if (!string.IsNullOrEmpty(_config.JwtToken))
-            _ws.Options.SetRequestHeader("Authorization", $"Bearer {_config.JwtToken}");
-
-        var wsUrl = _config.BackendUrl
+        // El endpoint WS del backend lee el token como query param, no como header
+        var wsBase = _config.BackendUrl
             .Replace("https://", "wss://")
             .Replace("http://", "ws://")
             + "/api/desktop/events";
+
+        var wsUrl = !string.IsNullOrEmpty(_config.JwtToken)
+            ? $"{wsBase}?token={Uri.EscapeDataString(_config.JwtToken)}"
+            : wsBase;
 
         await _ws.ConnectAsync(new Uri(wsUrl), ct);
         OnLog?.Invoke("WebSocket conectado — esperando ventas...");
