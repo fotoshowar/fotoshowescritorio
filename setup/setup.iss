@@ -46,7 +46,7 @@ Source: "..\FotoshowShell\bin\Release\net48\*"; \
     DestDir: "{app}\shell"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; ── AI Worker (InsightFace — compilado con PyInstaller) ─────────────────────
-Source: "..\dist\ai_worker.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\dist\ai_worker.exe"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 ; Fallback script (para Python portable si el exe falla)
 Source: "..\ai_worker.py"; DestDir: "{app}"; Flags: ignoreversion
 

@@ -1,0 +1,106 @@
+name: Build Installer
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      # ── 1. Checkout ────────────────────────────────────────────────────────────
+      - uses: actions/checkout@v4
+
+      # ── 2. .NET 8 para FotoshowTray ───────────────────────────────────────────
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      # ── 3. Publish FotoshowTray ───────────────────────────────────────────────
+      - name: Publish FotoshowTray
+        run: |
+          dotnet publish FotoshowTray/FotoshowTray.csproj `
+            -c Release -r win-x64 --self-contained false
+        shell: pwsh
+
+      # ── 4. Build FotoshowShell (.NET Framework 4.8 — preinstalado en el runner)
+      - name: Build FotoshowShell
+        run: |
+          dotnet build FotoshowShell/FotoshowShell.csproj -c Release
+        shell: pwsh
+
+      # ── 5. Descargar ai_worker.exe desde el release más reciente ──────────────
+      #       Si no hay release con ese asset, el paso se salta sin romper el build.
+      - name: Download ai_worker.exe from latest release
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $asset = gh release list --limit 1 --json tagName -q ".[0].tagName" 2>$null
+          if ($asset) {
+            gh release download $asset --pattern "ai_worker.exe" --dir "dist" 2>$null
+            if (Test-Path "dist/ai_worker.exe") {
+              Write-Host "ai_worker.exe descargado del release $asset"
+            } else {
+              Write-Host "ai_worker.exe no encontrado en el release — se omite del instalador"
+            }
+          } else {
+            Write-Host "Sin releases previos — ai_worker.exe se omite del instalador"
+          }
+        shell: pwsh
+
+      # ── 6. Instalar InnoSetup 6 ───────────────────────────────────────────────
+      - name: Install Inno Setup 6
+        run: |
+          $url = "https://jrsoftware.org/download.php/is.exe"
+          Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\innosetup.exe"
+          Start-Process "$env:TEMP\innosetup.exe" `
+            -ArgumentList "/VERYSILENT", "/NORESTART", "/SP-" `
+            -Wait -NoNewWindow
+        shell: pwsh
+
+      # ── 8. Compilar instalador ────────────────────────────────────────────────
+      - name: Build installer with InnoSetup
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          & $iscc "setup\setup.iss"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        shell: pwsh
+
+      # ── 9. Subir el .exe como artifact de cada run ────────────────────────────
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FotoShowEscritorio_Setup
+          path: setup/dist/FotoShowEscritorio_Setup_*.exe
+          retention-days: 30
+
+      # ── 10. Crear Release si el push es a un tag v* ───────────────────────────
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $exe = (Get-ChildItem "setup/dist/FotoShowEscritorio_Setup_*.exe").FullName
+          gh release create $tag $exe `
+            --title "FotoShow Escritorio $tag" `
+            --notes "## FotoShow Escritorio $tag
+
+          ### Instalación
+          1. Descargá \`FotoShowEscritorio_Setup_*.exe\`
+          2. Ejecutalo como administrador
+          3. Seguí el asistente
+
+          ### Requiere
+          - Windows 10 64-bit o superior
+          - [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0/runtime)
+
+          > El motor de IA facial (InsightFace) se distribuye por separado como \`ai_worker.exe\`.
+          > Sin él, las fotos se suben sin análisis facial." `
+            --latest
+        shell: pwsh
