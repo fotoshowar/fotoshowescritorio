@@ -1,0 +1,22 @@
+# Carpetas de compilación
+bin/
+obj/
+build/
+dist/
+ai_worker.dist/
+ai_worker.onefile-build/
+Nueva carpeta/
+
+# Ejecutables y binarios compilados
+*.exe
+*.pkg
+*.pyd
+
+# .NET
+*.user
+.vs/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo

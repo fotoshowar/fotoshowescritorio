@@ -1,0 +1,420 @@
+<Window x:Class="Fotoshow.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Fotoshow"
+        Height="800" Width="1400"
+        MinHeight="600" MinWidth="1000"
+        Background="#F3F3F3"
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None"
+        ResizeMode="CanResizeWithGrip">
+
+    <Window.Resources>
+
+        <!-- Template tarjetas fotos estilo Windows -->
+        <DataTemplate x:Key="PhotoCardTemplate">
+            <Border Background="White"
+                    BorderBrush="#E5E5E5"
+                    BorderThickness="1"
+                    Margin="6"
+                    Width="180"
+                    Height="200"
+                    Cursor="Hand">
+
+                <Grid>
+                    <Image Source="{Binding ThumbnailPath}"
+                           Stretch="UniformToFill"
+                           Width="160" Height="160"
+                           Margin="10,10,10,0"
+                           VerticalAlignment="Top"/>
+
+                    <StackPanel VerticalAlignment="Bottom" Margin="10" Height="20">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0" Orientation="Horizontal">
+                                <TextBlock Text="&#xE77B;" FontFamily="Segoe MDL2 Assets" Foreground="#605E5C" FontSize="12" Margin="0,0,4,0"/>
+                                <TextBlock Text="{Binding FacesDetected}" Foreground="#605E5C" FontFamily="Segoe UI" FontSize="11"/>
+                            </StackPanel>
+
+                            <TextBlock Grid.Column="1" Text="&#xE753;" FontFamily="Segoe MDL2 Assets" Foreground="#0067C0" FontSize="12"
+                                       Visibility="{Binding CloudSynced, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                        </Grid>
+                    </StackPanel>
+                </Grid>
+
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#F3F2F1"/>
+                                <Setter Property="BorderBrush" Value="#0067C0"/>
+                                <Setter Property="BorderThickness" Value="2"/>
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+            </Border>
+        </DataTemplate>
+
+        <!-- Template tarjetas de persona -->
+        <DataTemplate x:Key="PersonCardTemplate">
+            <Border Background="White" BorderBrush="#E5E5E5" BorderThickness="1"
+                    Margin="6" Width="140" Height="170" Cursor="Hand"
+                    MouseLeftButtonUp="PersonCard_Click">
+                <Grid>
+                    <Image Source="{Binding ThumbnailPath}"
+                           Stretch="UniformToFill"
+                           Width="120" Height="120"
+                           Margin="10,10,10,0"
+                           VerticalAlignment="Top"/>
+                    <StackPanel VerticalAlignment="Bottom" Margin="10,0,10,8">
+                        <TextBlock Text="{Binding DisplayName}" FontFamily="Segoe UI" FontSize="12" FontWeight="SemiBold"
+                                   Foreground="#323130" HorizontalAlignment="Center"/>
+                        <TextBlock Text="{Binding PhotoCountText}" FontFamily="Segoe UI" FontSize="11"
+                                   Foreground="#605E5C" HorizontalAlignment="Center"/>
+                    </StackPanel>
+                </Grid>
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#F3F2F1"/>
+                                <Setter Property="BorderBrush" Value="#0067C0"/>
+                                <Setter Property="BorderThickness" Value="2"/>
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+            </Border>
+        </DataTemplate>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="32"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="24"/>
+        </Grid.RowDefinitions>
+
+        <!-- CUSTOM TITLE BAR -->
+        <Border Grid.Row="0" Background="White" BorderBrush="#E5E5E5" BorderThickness="0,0,0,1"
+                MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+            <Grid>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
+                    <TextBlock Text="&#xEB9F;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="#0067C0" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                    <TextBlock Text="Fotoshow" FontFamily="Segoe UI" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Style="{StaticResource WindowControlButton}" Content="&#xE713;" Click="CameraSettings_Click" ToolTip="Configuración de cámaras"/>
+                    <Button Style="{StaticResource WindowControlButton}" Content="&#xE949;" Click="MinimizeButton_Click"/>
+                    <Button x:Name="MaximizeBtn" Style="{StaticResource WindowControlButton}" Content="&#xE739;" Click="MaximizeButton_Click"/>
+                    <Button Style="{StaticResource WindowCloseButton}" Content="&#xE106;" Click="CloseButton_Click"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- COMMAND BAR (context-sensitive) -->
+        <Border Grid.Row="1" Background="#FAFAFA" BorderBrush="#E5E5E5" BorderThickness="0,0,0,1" Padding="8,4">
+            <!-- Explorar commands -->
+            <StackPanel x:Name="ExplorarCommandBar" Orientation="Horizontal">
+                <Button Style="{StaticResource PrimaryButton}" Margin="0,0,4,0" Click="ImportPhotos_Click">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE8B5;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,6,0"/>
+                        <TextBlock Text="Importar" FontFamily="Segoe UI"/>
+                    </StackPanel>
+                </Button>
+                <Button Style="{StaticResource SecondaryButton}" Margin="0,0,4,0" Click="CreateFolder_Click">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE8F4;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,6,0"/>
+                        <TextBlock Text="Nueva Carpeta" FontFamily="Segoe UI"/>
+                    </StackPanel>
+                </Button>
+                <Button Style="{StaticResource SecondaryButton}" Margin="0,0,4,0" Click="ScanAll_Click">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE721;" FontFamily="Segoe MDL2 Assets" FontSize="16" Margin="0,0,6,0"/>
+                        <TextBlock Text="Escanear Todo" FontFamily="Segoe UI"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Border>
+
+        <!-- Hidden Personas command bar (swapped in by tab change) -->
+
+        <!-- CONTENIDO: TabControl -->
+        <TabControl Grid.Row="2" x:Name="MainTabControl" Style="{StaticResource ExplorerTabControl}"
+                    SelectionChanged="MainTab_SelectionChanged">
+
+            <!-- TAB EXPLORAR -->
+            <TabItem Style="{StaticResource ExplorerTabItem}">
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xED43;" FontFamily="Segoe MDL2 Assets" FontSize="14" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="Explorar" FontFamily="Segoe UI"/>
+                    </StackPanel>
+                </TabItem.Header>
+
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="220" MinWidth="180" MaxWidth="280"/>
+                        <ColumnDefinition Width="1"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- PANEL NAVEGACIÓN -->
+                    <Border Grid.Column="0" Background="#FAFAFA" BorderBrush="#E5E5E5" BorderThickness="0,0,1,0">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel Margin="8">
+                                <!-- Status IA -->
+                                <Border Background="White" BorderBrush="#E5E5E5" BorderThickness="1" Padding="10,8" Margin="0,8,0,16">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Ellipse x:Name="AiStatusDot" Width="8" Height="8" Fill="#D13438" Margin="0,0,6,0"/>
+                                        <TextBlock x:Name="AiStatusText" Text="IA inicializando..." FontFamily="Segoe UI" FontSize="11" Foreground="#605E5C"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Carpetas -->
+                                <TextBlock Text="Carpetas" FontFamily="Segoe UI" FontSize="12" FontWeight="SemiBold" Margin="4,0,0,8" Foreground="#605E5C"/>
+                                <Border Background="White" BorderBrush="#E5E5E5" BorderThickness="1" Padding="4">
+                                    <TreeView x:Name="FolderTree" Background="Transparent" BorderThickness="0"
+                                              SelectedItemChanged="FolderTree_SelectedItemChanged">
+                                        <TreeView.ItemContainerStyle>
+                                            <Style TargetType="TreeViewItem">
+                                                <Setter Property="Padding" Value="2"/>
+                                                <Setter Property="FontFamily" Value="Segoe UI"/>
+                                                <Setter Property="FontSize" Value="13"/>
+                                                <Setter Property="IsExpanded" Value="False"/>
+                                            </Style>
+                                        </TreeView.ItemContainerStyle>
+                                    </TreeView>
+                                </Border>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Border>
+
+                    <!-- SEPARADOR -->
+                    <GridSplitter Grid.Column="1" Width="1" Background="#E5E5E5" HorizontalAlignment="Stretch"/>
+
+                    <!-- ÁREA FOTOS -->
+                    <Grid Grid.Column="2">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Barra herramientas vista -->
+                        <Border Grid.Row="0" Background="White" BorderBrush="#E5E5E5" BorderThickness="0,0,0,1" Padding="12,6">
+                            <Grid>
+                                <TextBlock x:Name="PhotoCountText" Text="0 elementos" FontFamily="Segoe UI" FontSize="12" Foreground="#605E5C" VerticalAlignment="Center"/>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                    <TextBlock Text="Vista:" FontFamily="Segoe UI" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" Foreground="#605E5C"/>
+                                    <ComboBox x:Name="ThumbnailSizeCombo" Width="100" SelectionChanged="ThumbnailSize_Changed">
+                                        <ComboBoxItem Content="Pequeño"/>
+                                        <ComboBoxItem Content="Mediano" IsSelected="True"/>
+                                        <ComboBoxItem Content="Grande"/>
+                                    </ComboBox>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <!-- GALERÍA -->
+                        <ListView Grid.Row="1" x:Name="PhotoGallery" Background="White" BorderThickness="0"
+                                  ItemTemplate="{StaticResource PhotoCardTemplate}"
+                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                  ScrollViewer.ScrollChanged="PhotoGallery_ScrollChanged"
+                                  VirtualizingPanel.IsVirtualizing="True"
+                                  VirtualizingPanel.VirtualizationMode="Recycling"
+                                  Padding="12"
+                                  SelectionMode="Extended"
+                                  MouseDoubleClick="PhotoGallery_DoubleClick"
+                                  AllowDrop="True"
+                                  DragOver="PhotoGallery_DragOver"
+                                  Drop="PhotoGallery_Drop">
+                            <ListView.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Click="PrintPhoto_Click">
+                                        <MenuItem.Header>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="&#xE749;" FontFamily="Segoe MDL2 Assets" Width="18"/>
+                                                <TextBlock Text="Imprimir" Margin="8,0,0,0"/>
+                                            </StackPanel>
+                                        </MenuItem.Header>
+                                    </MenuItem>
+                                    <MenuItem Click="ViewPhoto_Click">
+                                        <MenuItem.Header>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="&#xE8F4;" FontFamily="Segoe MDL2 Assets" Width="18"/>
+                                                <TextBlock Text="Abrir" Margin="8,0,0,0"/>
+                                            </StackPanel>
+                                        </MenuItem.Header>
+                                    </MenuItem>
+                                    <Separator/>
+                                    <MenuItem Click="DeletePhoto_Click">
+                                        <MenuItem.Header>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="&#xE74D;" FontFamily="Segoe MDL2 Assets" Width="18"/>
+                                                <TextBlock Text="Eliminar" Margin="8,0,0,0"/>
+                                            </StackPanel>
+                                        </MenuItem.Header>
+                                    </MenuItem>
+                                </ContextMenu>
+                            </ListView.ContextMenu>
+                            <ListView.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel/>
+                                </ItemsPanelTemplate>
+                            </ListView.ItemsPanel>
+                        </ListView>
+
+                        <!-- Loading -->
+                        <Grid Grid.Row="1" x:Name="LoadingOverlay" Background="#E0FFFFFF" Visibility="Collapsed">
+                            <Border Background="White" CornerRadius="4" Padding="24" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Border.Effect>
+                                    <DropShadowEffect Color="Black" Opacity="0.1" BlurRadius="16" ShadowDepth="2"/>
+                                </Border.Effect>
+                                <StackPanel>
+                                    <TextBlock Text="&#xE895;" FontFamily="Segoe MDL2 Assets" FontSize="32" Foreground="#0067C0" HorizontalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+                                        <TextBlock.RenderTransform>
+                                            <RotateTransform x:Name="LoadingRotation"/>
+                                        </TextBlock.RenderTransform>
+                                    </TextBlock>
+                                    <TextBlock Text="Cargando..." FontFamily="Segoe UI" FontSize="12" Margin="0,8,0,0" HorizontalAlignment="Center"/>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </Grid>
+                </Grid>
+            </TabItem>
+
+            <!-- TAB PERSONAS -->
+            <TabItem Style="{StaticResource ExplorerTabItem}">
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE77B;" FontFamily="Segoe MDL2 Assets" FontSize="14" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="Personas" FontFamily="Segoe UI"/>
+                    </StackPanel>
+                </TabItem.Header>
+
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Tarjetas de personas -->
+                    <Border Grid.Row="0" Background="#FAFAFA" BorderBrush="#E5E5E5" BorderThickness="0,0,0,1" Padding="8" MinHeight="60">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" x:Name="PersonSectionTitle" Text="Personas detectadas" FontFamily="Segoe UI" FontSize="12"
+                                       FontWeight="SemiBold" Foreground="#605E5C" Margin="4,0,0,8"/>
+                            <ItemsControl Grid.Row="1" x:Name="PersonCardsPanel" ItemTemplate="{StaticResource PersonCardTemplate}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                            </ItemsControl>
+                        </Grid>
+                    </Border>
+
+                    <!-- Galería filtrada por persona -->
+                    <Grid Grid.Row="1">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <Border Grid.Row="0" Background="White" BorderBrush="#E5E5E5" BorderThickness="0,0,0,1" Padding="12,6">
+                            <TextBlock x:Name="PersonPhotoCountText" Text="Seleccioná una persona para ver sus fotos"
+                                       FontFamily="Segoe UI" FontSize="12" Foreground="#605E5C" VerticalAlignment="Center"/>
+                        </Border>
+
+                        <ListView Grid.Row="1" x:Name="PersonPhotoGallery" Background="White" BorderThickness="0"
+                                  ItemTemplate="{StaticResource PhotoCardTemplate}"
+                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                  VirtualizingPanel.IsVirtualizing="True"
+                                  VirtualizingPanel.VirtualizationMode="Recycling"
+                                  Padding="12"
+                                  SelectionMode="Extended"
+                                  MouseDoubleClick="PersonPhotoGallery_DoubleClick">
+                            <ListView.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel/>
+                                </ItemsPanelTemplate>
+                            </ListView.ItemsPanel>
+                        </ListView>
+                    </Grid>
+                </Grid>
+            </TabItem>
+        </TabControl>
+
+        <!-- PROGRESO IA -->
+        <Border Grid.Row="3" x:Name="AiProgressPanel" Background="#FAFAFA" BorderBrush="#E5E5E5" BorderThickness="0,1,0,0" Padding="12,6" Visibility="Collapsed">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="&#xE8B5;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="#0067C0" Margin="0,0,8,0"/>
+                <ProgressBar Grid.Column="1" x:Name="AiProgressBar" Height="4" Value="0" Maximum="100" Background="#E5E5E5" Foreground="#0067C0"/>
+            </Grid>
+        </Border>
+
+        <!-- LOG PANEL -->
+        <Border Grid.Row="4" x:Name="LogPanel" Background="White" BorderBrush="#E5E5E5" BorderThickness="0,1,0,0" Height="0" ClipToBounds="True">
+            <ScrollViewer Padding="8">
+                <ListBox x:Name="LogList" Background="Transparent" BorderThickness="0">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" Foreground="#605E5C" FontFamily="Consolas" FontSize="10" TextWrapping="Wrap"/>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Padding" Value="0,1"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <ContentPresenter/>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                </ListBox>
+            </ScrollViewer>
+        </Border>
+
+        <!-- STATUS BAR -->
+        <Border Grid.Row="5" Background="#F3F3F3" BorderBrush="#E5E5E5" BorderThickness="0,1,0,0">
+            <Grid Margin="12,0">
+                <TextBlock x:Name="StatusText" Text="Listo" FontFamily="Segoe UI" FontSize="11" Foreground="#605E5C" VerticalAlignment="Center"/>
+
+                <Border x:Name="PersonFilterPanel" Visibility="Collapsed" Background="#E5F3FF" BorderBrush="#0067C0" BorderThickness="1" Padding="6,2" HorizontalAlignment="Center">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock x:Name="PersonFilterBadge" Text="Filtrado" FontFamily="Segoe UI" FontSize="10" Foreground="#0067C0"/>
+                        <Button Content="✕" Background="Transparent" BorderThickness="0" Foreground="#0067C0" FontSize="10" Margin="4,0,0,0" Cursor="Hand" Click="ClearPersonFilter_Click"/>
+                    </StackPanel>
+                </Border>
+
+                <Button HorizontalAlignment="Right" Style="{StaticResource StatusButton}" Click="ToggleLog_Click">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE756;" FontFamily="Segoe MDL2 Assets" FontSize="10" Margin="0,0,4,0"/>
+                        <TextBlock Text="Consola" FontFamily="Segoe UI" FontSize="11"/>
+                    </StackPanel>
+                </Button>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
