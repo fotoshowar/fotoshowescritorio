@@ -108,11 +108,11 @@ public class TrayApp : ApplicationContext
         {
             // Buscar la foto local por path_hash
             var record = await _db.Photos
-                .FirstOrDefaultAsync(p => p.PathHash == sale.PhotoLocalPath);
+                .FirstOrDefaultAsync(p => p.PathHash == sale.PhotoPathHash);
 
             if (record is null || !File.Exists(record.LocalPath))
             {
-                Log($"Foto no encontrada localmente: {sale.PhotoLocalPath}");
+                Log($"Foto no encontrada localmente: {sale.PhotoPathHash}");
                 return;
             }
 
@@ -122,7 +122,7 @@ public class TrayApp : ApplicationContext
                 record.Status = "delivered";
                 record.SoldAt = DateTime.UtcNow;
                 record.DeliveredAt = DateTime.UtcNow;
-                record.OrderItemId = sale.OrderItemId;
+                record.OrderItemId = sale.OrderItemId.ToString();
                 await _db.SaveChangesAsync(_appCts.Token);
 
                 _tray.ShowBalloonTip(3000, "FotoShow", $"Foto entregada a {sale.BuyerEmail}", ToolTipIcon.Info);

@@ -95,34 +95,59 @@ public class BackendClient : IAsyncDisposable
         }
     }
 
-    // ─── entrega de foto original ───────────────────────────────────────────────
+    // ─── entrega de foto original (directo a R2, servidor no toca el binario) ───
 
     /// <summary>
-    /// Cuando hay una venta, sube la foto original al backend que la entrega al comprador.
-    /// El backend la sube a R2 y dispara el email de entrega.
+    /// Entrega la foto original cuando hay una venta:
+    /// 1. Pide presigned PUT URL al backend
+    /// 2. Sube la foto DIRECTO a R2 (Cloudflare) — el servidor no recibe el archivo
+    /// 3. Confirma al backend que ya subió
     /// </summary>
-    public async Task<bool> DeliverPhotoAsync(string localPath, string orderItemId, CancellationToken ct = default)
+    public async Task<bool> DeliverPhotoAsync(string localPath, int orderItemId, CancellationToken ct = default)
     {
         if (!File.Exists(localPath)) return false;
 
         try
         {
-            using var form = new MultipartFormDataContent();
-            var photoBytes = await File.ReadAllBytesAsync(localPath, ct);
-            var photoContent = new ByteArrayContent(photoBytes);
-            photoContent.Headers.ContentType = new MediaTypeHeaderValue("image/jpeg");
-            form.Add(photoContent, "photo", Path.GetFileName(localPath));
-            form.Add(new StringContent(orderItemId), "order_item_id");
-
-            var resp = await _http.PostAsync("/api/desktop/deliver", form, ct);
-
-            if (!resp.IsSuccessStatusCode)
+            // Paso 1: obtener presigned URL
+            var urlResp = await _http.GetAsync($"/api/desktop/upload-url?order_item_id={orderItemId}", ct);
+            if (!urlResp.IsSuccessStatusCode)
             {
-                OnLog?.Invoke($"Deliver error {resp.StatusCode}");
+                OnLog?.Invoke($"Error obteniendo upload URL: {urlResp.StatusCode}");
                 return false;
             }
 
-            OnLog?.Invoke($"Foto entregada: {Path.GetFileName(localPath)}");
+            var urlJson = await urlResp.Content.ReadAsStringAsync(ct);
+            using var urlDoc = JsonDocument.Parse(urlJson);
+            var uploadUrl = urlDoc.RootElement.GetProperty("upload_url").GetString()!;
+            var s3Key = urlDoc.RootElement.GetProperty("s3_key").GetString()!;
+
+            // Paso 2: subir directo a R2 con PUT (sin pasar por nuestro servidor)
+            var photoBytes = await File.ReadAllBytesAsync(localPath, ct);
+            using var r2Client = new HttpClient();
+            var putContent = new ByteArrayContent(photoBytes);
+            putContent.Headers.ContentType = new MediaTypeHeaderValue("image/jpeg");
+            var putResp = await r2Client.PutAsync(uploadUrl, putContent, ct);
+
+            if (!putResp.IsSuccessStatusCode)
+            {
+                OnLog?.Invoke($"Error subiendo a R2: {putResp.StatusCode}");
+                return false;
+            }
+
+            // Paso 3: confirmar al backend
+            using var confirmForm = new MultipartFormDataContent();
+            confirmForm.Add(new StringContent(orderItemId.ToString()), "order_item_id");
+            confirmForm.Add(new StringContent(s3Key), "s3_key");
+            var confirmResp = await _http.PostAsync("/api/desktop/deliver-confirm", confirmForm, ct);
+
+            if (!confirmResp.IsSuccessStatusCode)
+            {
+                OnLog?.Invoke($"Error confirmando entrega: {confirmResp.StatusCode}");
+                return false;
+            }
+
+            OnLog?.Invoke($"Foto entregada directo a R2: {Path.GetFileName(localPath)}");
             return true;
         }
         catch (Exception ex)
@@ -219,9 +244,9 @@ public class BackendClient : IAsyncDisposable
 // ─── modelos de WebSocket ───────────────────────────────────────────────────
 
 public record SaleNotification(
-    string OrderItemId,
-    string PhotoLocalPath,   // path hash para identificar la foto
-    string BackendPhotoId,
+    int OrderItemId,
+    string PhotoPathHash,    // SHA-256 del path local — para encontrar el archivo
+    int BackendPhotoId,
     string BuyerEmail,
     string EventTitle
 );
