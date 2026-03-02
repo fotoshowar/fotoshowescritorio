@@ -202,6 +202,11 @@ Los dos espacios al inicio son intencionales — Windows ordena alphabéticament
 - No auto-commit sin pedirlo explícitamente
 - Target platforms: Windows 10 64-bit o superior
 
+## División de trabajo
+- **Este repo (fotoshowescritorio)**: solo app de escritorio Windows — se trabaja en local (Windows)
+- **fotoshow-v2**: solo backend FastAPI — se trabaja en el servidor Vultr
+- No mezclar: si estás en local, no toques el repo del servidor y viceversa
+
 ## Estado actual (2026-03-02)
 - [x] FotoshowTray: estructura completa, falta compilar y testear
 - [x] FotoshowShell: overlay icons con SharpShell, falta compilar y testear
