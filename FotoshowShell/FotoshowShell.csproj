@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- .NET Framework 4.8: máxima compatibilidad con COM shell extensions en Windows -->
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>FotoshowShell</AssemblyName>
+    <RootNamespace>FotoshowShell</RootNamespace>
+    <OutputType>Library</OutputType>
+    <Nullable>enable</Nullable>
+    <LangVersion>10</LangVersion>
+    <!-- COM visibility -->
+    <RegisterForComInterop>false</RegisterForComInterop>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- SharpShell: abstracción sobre COM para shell extensions -->
+    <PackageReference Include="SharpShell" Version="2.7.2" />
+    <PackageReference Include="System.Data.SQLite.Core" Version="1.0.119" />
+  </ItemGroup>
+
+</Project>
