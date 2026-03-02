@@ -20,10 +20,18 @@
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Resources\fotoshow.ico" />
-    <EmbeddedResource Include="Resources\overlay_pending.ico" />
-    <EmbeddedResource Include="Resources\overlay_synced.ico" />
-    <EmbeddedResource Include="Resources\overlay_sold.ico" />
+    <Content Include="Resources\fotoshow.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Resources\overlay_pending.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Resources\overlay_synced.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Resources\overlay_sold.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
 </Project>

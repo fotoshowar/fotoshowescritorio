@@ -1,3 +1,5 @@
+using FotoshowTray.Models;
+
 namespace FotoshowTray;
 
 /// <summary>

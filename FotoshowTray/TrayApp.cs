@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using FotoshowTray.Models;
 
 namespace FotoshowTray;

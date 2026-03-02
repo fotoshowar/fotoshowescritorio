@@ -209,10 +209,10 @@ public class PhotoQueue : IDisposable
         var thumbPath = Path.Combine(ThumbnailDir, $"{Guid.NewGuid()}.jpg");
         try
         {
-            using var image = await Image.LoadAsync(sourcePath, ct);
+            using var image = await SixLabors.ImageSharp.Image.LoadAsync(sourcePath, ct);
             image.Mutate(x => x.AutoOrient().Resize(new ResizeOptions
             {
-                Size = new Size(_config.ThumbnailSize, _config.ThumbnailSize),
+                Size = new SixLabors.ImageSharp.Size(_config.ThumbnailSize, _config.ThumbnailSize),
                 Mode = ResizeMode.Max,
                 Sampler = KnownResamplers.Lanczos3
             }));

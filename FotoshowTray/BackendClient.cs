@@ -207,7 +207,7 @@ public class BackendClient : IAsyncDisposable
                     new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                 if (notification is not null)
                 {
-                    OnLog?.Invoke($"VENTA recibida: {notification.PhotoLocalPath}");
+                    OnLog?.Invoke($"VENTA recibida: {notification.PhotoPathHash}");
                     OnSaleReceived?.Invoke(notification);
                 }
             }
