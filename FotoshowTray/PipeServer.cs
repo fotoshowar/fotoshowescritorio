@@ -21,6 +21,7 @@ public class PipeServer : IDisposable
     public event Action<string>? OnLog;
     public event Action<string>? OnAddFile;
     public event Action<string>? OnAddFolder;
+    public event Action<string>? OnAuthToken;
 
     public void Start()
     {
@@ -83,6 +84,14 @@ public class PipeServer : IDisposable
                     {
                         OnLog?.Invoke($"pipe → agregar carpeta: {path}");
                         OnAddFolder?.Invoke(path);
+                    }
+                    break;
+
+                case "auth_token":
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        OnLog?.Invoke("pipe → token recibido");
+                        OnAuthToken?.Invoke(path);
                     }
                     break;
 

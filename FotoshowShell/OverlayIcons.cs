@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using SharpShell.Attributes;
+using SharpShell.Interop;
 using SharpShell.SharpIconOverlayHandler;
 
 // Registrar los tres handlers de overlay.

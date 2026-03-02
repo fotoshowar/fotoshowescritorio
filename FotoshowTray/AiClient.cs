@@ -13,7 +13,7 @@ namespace FotoshowTray;
 public class AiClient : IDisposable
 {
     private const string Host = "127.0.0.1";
-    private const int Port = 54321;
+    private const int Port = 54400;
 
     private Process? _workerProcess;
     private bool _disposed;
@@ -45,11 +45,15 @@ public class AiClient : IDisposable
             OnLog?.Invoke($"Iniciando {Path.GetFileName(exePath)}...");
             _workerProcess = Process.Start(new ProcessStartInfo(exePath)
             {
-                UseShellExecute = false,
-                CreateNoWindow = true,
+                UseShellExecute    = false,
+                CreateNoWindow     = true,
+                WorkingDirectory   = Path.GetDirectoryName(exePath) ?? exeDir,
                 RedirectStandardOutput = true,
-                RedirectStandardError = true
+                RedirectStandardError  = true
             });
+            // Prioridad baja para que no trabe la UI ni el sistema
+            try { if (_workerProcess != null) _workerProcess.PriorityClass = ProcessPriorityClass.BelowNormal; }
+            catch { }
         }
         else
         {
@@ -72,10 +76,10 @@ public class AiClient : IDisposable
             }
         }
 
-        // Esperar a que levante (máximo 30 s)
-        for (int i = 0; i < 60; i++)
+        // Esperar a que levante (hasta que CT sea cancelado — puede ser varios minutos)
+        while (!ct.IsCancellationRequested)
         {
-            await Task.Delay(500, ct);
+            await Task.Delay(1000, ct).ContinueWith(_ => { });
             if (await IsPortOpenAsync()) return true;
         }
 
@@ -92,13 +96,21 @@ public class AiClient : IDisposable
     {
         try
         {
-            var request = JsonSerializer.Serialize(new { command = "process", path = imagePath });
+            var request = JsonSerializer.Serialize(new { cmd = "analyze", path = imagePath });
             var response = await SendReceiveAsync(request, ct);
 
             if (response is null) return null;
 
             using var doc = JsonDocument.Parse(response);
             var root = doc.RootElement;
+
+            // Si el worker retornó error, loguear y salir
+            if (root.TryGetProperty("status", out var statusEl) && statusEl.GetString() == "error")
+            {
+                var msg = root.TryGetProperty("message", out var msgEl) ? msgEl.GetString() : "error desconocido";
+                OnLog?.Invoke($"ai_worker error: {msg}");
+                return new AiResult(0, null);
+            }
 
             if (!root.TryGetProperty("faces", out var facesEl)) return new AiResult(0, null);
 

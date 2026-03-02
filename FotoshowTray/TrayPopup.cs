@@ -159,13 +159,14 @@ public class TrayPopup : Form
                     : $"Subiendo: {Path.GetFileName(currentFile)}";
 
             _lblCount.Text   = total > 0 ? $"{done}/{total}" : "";
-            _progress.Value  = total > 0 ? (int)(done * 100.0 / total) : 0;
+            _progress.Value  = total > 0 ? Math.Clamp((int)(done * 100.0 / total), 0, 100) : 0;
             _lblSale.Visible = false;
             _separator.Visible = false;
 
             AdjustHeight(false);
             PositionNearTray();
             FadeIn();
+            Invalidate();        // repintar barra custom
             _hideTimer.Stop();   // no ocultar mientras hay progreso activo
         });
     }
@@ -185,6 +186,7 @@ public class TrayPopup : Form
             AdjustHeight(false);
             PositionNearTray();
             FadeIn();
+            Invalidate();
             _hideTimer.Start();
         });
     }
@@ -226,7 +228,10 @@ public class TrayPopup : Form
             AdjustHeight(false);
             PositionNearTray();
             FadeIn();
-            if (autoHide) _hideTimer.Start();
+            if (autoHide)
+                _hideTimer.Start();
+            else
+                _hideTimer.Stop();
         });
     }
 
@@ -331,8 +336,8 @@ public class TrayPopup : Form
     private void InvokeIfNeeded(Action action)
     {
         if (IsHandleCreated && InvokeRequired)
-            Invoke(action);
-        else
+            BeginInvoke(action);   // asíncrono: no bloquea el thread de procesamiento
+        else if (IsHandleCreated)
             action();
     }
 

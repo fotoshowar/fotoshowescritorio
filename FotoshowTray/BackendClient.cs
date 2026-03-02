@@ -218,6 +218,45 @@ public class BackendClient : IAsyncDisposable
         }
     }
 
+    // ─── galerías ──────────────────────────────────────────────────────────────
+
+    public async Task<List<GalleryInfo>> ListGalleriesAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            var resp = await _http.GetAsync("/api/desktop/galleries", ct);
+            if (!resp.IsSuccessStatusCode) return [];
+            var json = await resp.Content.ReadAsStringAsync(ct);
+            return JsonSerializer.Deserialize<List<GalleryInfo>>(json,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
+        }
+        catch (Exception ex)
+        {
+            OnLog?.Invoke($"ListGalleries error: {ex.Message}");
+            return [];
+        }
+    }
+
+    public async Task<string?> CreateGalleryAsync(string name, CancellationToken ct = default)
+    {
+        try
+        {
+            var body = new StringContent(
+                JsonSerializer.Serialize(new { name }),
+                Encoding.UTF8, "application/json");
+            var resp = await _http.PostAsync("/api/desktop/galleries", body, ct);
+            if (!resp.IsSuccessStatusCode) return null;
+            var json = await resp.Content.ReadAsStringAsync(ct);
+            using var doc = JsonDocument.Parse(json);
+            return doc.RootElement.GetProperty("id").GetString();
+        }
+        catch (Exception ex)
+        {
+            OnLog?.Invoke($"CreateGallery error: {ex.Message}");
+            return null;
+        }
+    }
+
     // ─── autenticación ─────────────────────────────────────────────────────────
 
     /// <summary>
@@ -226,6 +265,15 @@ public class BackendClient : IAsyncDisposable
     /// </summary>
     public string GetDesktopLoginUrl() =>
         $"{_config.BackendUrl}/api/auth/google/desktop?redirect_uri=fotoshow://auth";
+
+    /// <summary>
+    /// Abre el dashboard pasando el JWT para que el backend cree una sesión de browser.
+    /// El backend debe implementar GET /api/auth/desktop-session?token=JWT&redirect=/dashboard
+    /// </summary>
+    public string GetDashboardUrl() =>
+        !string.IsNullOrEmpty(_config.JwtToken)
+            ? $"{_config.BackendUrl}/api/auth/desktop-session?token={Uri.EscapeDataString(_config.JwtToken)}&redirect=/dashboard"
+            : $"{_config.BackendUrl}/dashboard";
 
     public async ValueTask DisposeAsync()
     {
@@ -241,7 +289,9 @@ public class BackendClient : IAsyncDisposable
     }
 }
 
-// ─── modelos de WebSocket ───────────────────────────────────────────────────
+// ─── modelos ────────────────────────────────────────────────────────────────
+
+public record GalleryInfo(string Id, string Name);
 
 public record SaleNotification(
     int OrderItemId,

@@ -29,7 +29,7 @@ import gc
 import numpy as np
 
 HOST = "127.0.0.1"
-PORT = 54321
+PORT = 54400
 MODEL_NAME = "buffalo_sc"   # modelo ligero — buen balance velocidad/precisión
                              # alternativa: "buffalo_l" para máxima precisión
 

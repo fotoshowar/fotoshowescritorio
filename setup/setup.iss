@@ -34,21 +34,21 @@ ArchitecturesInstallIn64BitMode=x64
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 
 [Tasks]
-Name: "startup"; Description: "Iniciar FotoShow automáticamente con Windows"; GroupDescription: "Opciones:"; Flags: checked
+Name: "startup"; Description: "Iniciar FotoShow automáticamente con Windows"; GroupDescription: "Opciones:"
 
 [Files]
 ; ── Tray app (.NET 8) ───────────────────────────────────────────────────────
-Source: "..\FotoshowTray\bin\Release\net8.0-windows\publish\*"; \
+Source: "..\FotoshowTray\bin\Release\net8.0-windows\win-x64\publish\*"; \
     DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; ── Shell extension (.NET Framework 4.8) ───────────────────────────────────
 Source: "..\FotoshowShell\bin\Release\net48\*"; \
     DestDir: "{app}\shell"; Flags: ignoreversion recursesubdirs createallsubdirs
 
-; ── AI Worker (compilado con Nuitka/PyInstaller) ───────────────────────────
-Source: "..\ai_worker.exe"; DestDir: "{app}"; Flags: ignoreversion; Check: FileExists('..\ai_worker.exe')
-; Fallback: ai_worker.py + python portable
-Source: "..\ai_worker.py"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+; ── AI Worker (InsightFace — compilado con PyInstaller) ─────────────────────
+Source: "..\dist\ai_worker.exe"; DestDir: "{app}"; Flags: ignoreversion
+; Fallback script (para Python portable si el exe falla)
+Source: "..\ai_worker.py"; DestDir: "{app}"; Flags: ignoreversion
 
 ; ── Iconos overlay ──────────────────────────────────────────────────────────
 Source: "icons\overlay_pending.ico"; DestDir: "{app}\shell\icons"; Flags: ignoreversion
@@ -113,6 +113,9 @@ Filename: "{app}\{#AppExeName}"; \
     Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
+; Matar procesos antes de desinstalar
+Filename: "taskkill.exe"; Parameters: "/F /IM FotoshowTray.exe"; Flags: runhidden waituntilterminated
+Filename: "taskkill.exe"; Parameters: "/F /IM ai_worker.exe"; Flags: runhidden waituntilterminated
 ; Desregistrar COM overlay
 Filename: "{dotnet4032}\regasm.exe"; \
     Parameters: "/unregister ""{app}\shell\FotoshowShell.dll"""; \
@@ -148,14 +151,17 @@ end;
 
 // ── Verificar que .NET 8 Desktop Runtime esté instalado ─────────────────────
 function DotNet8Installed(): Boolean;
-var
-  Key: String;
 begin
-  Key := 'SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App';
-  Result := RegKeyExists(HKLM, Key);
+  // Checar si dotnet.exe existe (instalado por SDK o Runtime)
+  Result := FileExists(ExpandConstant('{pf}\dotnet\dotnet.exe')) or
+            FileExists(ExpandConstant('{pf64}\dotnet\dotnet.exe')) or
+            RegKeyExists(HKLM, 'SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedframework\Microsoft.WindowsDesktop.App') or
+            RegKeyExists(HKLM, 'SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App');
 end;
 
 function InitializeSetup(): Boolean;
+var
+  ResultCode: Integer;
 begin
   Result := True;
   if not DotNet8Installed() then
@@ -165,7 +171,7 @@ begin
               mbInformation, MB_OKCANCEL) = IDOK then
       ShellExec('open',
         'https://dotnet.microsoft.com/download/dotnet/8.0/runtime',
-        '', '', SW_SHOWNORMAL, ewNoWait, 0);
+        '', '', SW_SHOWNORMAL, ewNoWait, ResultCode);
     Result := False;
   end;
 end;

@@ -14,7 +14,7 @@ namespace FotoshowTray;
 /// </summary>
 public class PhotoQueue : IDisposable
 {
-    private readonly ConcurrentQueue<string> _pendingPaths = new();
+    private readonly ConcurrentQueue<(string path, string? galleryId)> _pendingPaths = new();
     private readonly LocalDb _db;
     private readonly AiClient _ai;
     private readonly BackendClient _backend;
@@ -53,16 +53,16 @@ public class PhotoQueue : IDisposable
 
     // ─── encolar ───────────────────────────────────────────────────────────────
 
-    public void EnqueueFile(string path)
+    public void EnqueueFile(string path, string? galleryId = null)
     {
         if (IsImageFile(path))
         {
-            _pendingPaths.Enqueue(path);
+            _pendingPaths.Enqueue((path, galleryId));
             OnQueueCountChanged?.Invoke(_pendingPaths.Count);
         }
     }
 
-    public void EnqueueFolder(string folderPath)
+    public void EnqueueFolder(string folderPath, string? galleryId = null)
     {
         try
         {
@@ -71,7 +71,7 @@ public class PhotoQueue : IDisposable
                 .OrderBy(f => f);
 
             foreach (var f in files)
-                _pendingPaths.Enqueue(f);
+                _pendingPaths.Enqueue((f, galleryId));
 
             OnLog?.Invoke($"Carpeta agregada: {Path.GetFileName(folderPath)} ({_pendingPaths.Count} fotos en cola)");
             OnQueueCountChanged?.Invoke(_pendingPaths.Count);
@@ -93,7 +93,7 @@ public class PhotoQueue : IDisposable
 
         while (!ct.IsCancellationRequested)
         {
-            if (!_pendingPaths.TryDequeue(out var path))
+            if (!_pendingPaths.TryDequeue(out var item))
             {
                 // Si terminó un batch → notificar "listo"
                 if (done > 0 && _pendingPaths.IsEmpty)
@@ -112,25 +112,27 @@ public class PhotoQueue : IDisposable
             await sem.WaitAsync(ct).ContinueWith(_ => { });
             if (ct.IsCancellationRequested) break;
 
-            var capturedPath = path;
+            var capturedItem = item;
             var capturedDone = done;
-            OnProgressChanged?.Invoke(capturedDone, batchTotal, capturedPath);
+            OnProgressChanged?.Invoke(capturedDone, batchTotal, capturedItem.path);
 
             _ = Task.Run(async () =>
             {
-                try { await ProcessOneAsync(capturedPath, ct); }
+                try { await ProcessOneAsync(capturedItem.path, capturedItem.galleryId, ct); }
                 finally
                 {
                     Interlocked.Increment(ref done);
                     sem.Release();
                     OnQueueCountChanged?.Invoke(_pendingPaths.Count);
-                    OnProgressChanged?.Invoke(done, batchTotal, capturedPath);
+                    OnProgressChanged?.Invoke(done, batchTotal, capturedItem.path);
                 }
+                // Pequeña pausa para que el sistema respire entre fotos
+                await Task.Delay(150, ct).ContinueWith(_ => { });
             }, ct);
         }
     }
 
-    private async Task ProcessOneAsync(string path, CancellationToken ct)
+    private async Task ProcessOneAsync(string path, string? galleryId, CancellationToken ct)
     {
         // Verificar si ya está procesada
         var existing = await _db.FindByPathAsync(path);
@@ -143,6 +145,9 @@ public class PhotoQueue : IDisposable
             PathHash = LocalDb.HashPath(path),
             FileSize = new FileInfo(path).Length
         };
+
+        if (!string.IsNullOrEmpty(galleryId))
+            record.BackendGalleryId = galleryId;
 
         if (existing == null)
         {

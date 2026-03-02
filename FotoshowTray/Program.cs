@@ -92,15 +92,29 @@ static class Program
         }
     }
 
-    private static async Task ForwardOrSaveToken(string token)
+    private static async Task ForwardOrSaveToken(string uriOrToken)
     {
+        // Extraer JWT del URI scheme: "fotoshow://auth?token=eyJ..." → "eyJ..."
+        string jwt = uriOrToken;
+        if (uriOrToken.StartsWith("fotoshow://", StringComparison.OrdinalIgnoreCase))
+        {
+            var idx = uriOrToken.IndexOf("token=", StringComparison.OrdinalIgnoreCase);
+            if (idx >= 0)
+            {
+                jwt = uriOrToken[(idx + 6)..];
+                var amp = jwt.IndexOf('&');
+                if (amp >= 0) jwt = jwt[..amp];
+            }
+        }
+
         // Guardar token en config
         var config = TrayConfig.Load();
-        config.JwtToken = token;
+        config.JwtToken = jwt;
+        config.PhotographerName = "Fotógrafo";
         config.Save();
 
         // Notificar al tray si está corriendo
         if (PipeClient.IsTrayRunning())
-            await PipeClient.SendAsync("auth_token", token);
+            await PipeClient.SendAsync("auth_token", jwt);
     }
 }

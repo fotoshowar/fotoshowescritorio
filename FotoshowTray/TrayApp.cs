@@ -19,6 +19,10 @@ public class TrayApp : ApplicationContext
     private readonly TrayPopup _popup;
     private readonly CancellationTokenSource _appCts = new();
 
+    // Ítems del menú que se actualizan dinámicamente
+    private readonly ToolStripMenuItem _itemLogin;
+    private readonly ToolStripMenuItem _itemLogout;
+
     public TrayApp()
     {
         _config = TrayConfig.Load();
@@ -28,6 +32,7 @@ public class TrayApp : ApplicationContext
         _queue = new PhotoQueue(_db, _ai, _backend, _config);
         _pipe = new PipeServer();
         _popup = new TrayPopup();
+        _ = _popup.Handle;  // Forzar creación del handle en el hilo UI para que InvokeIfNeeded funcione desde threads de background
 
         // ─── menú del tray ─────────────────────────────────────────────────────
         var menu = new ContextMenuStrip();
@@ -40,10 +45,12 @@ public class TrayApp : ApplicationContext
         menu.Items.Add(itemQueue);
         menu.Items.Add(new ToolStripSeparator());
 
-        var itemLogin = new ToolStripMenuItem(_config.IsLoggedIn
-            ? $"Sesión: {_config.PhotographerName}"
-            : "Iniciar sesión...", null, OnLoginClick);
-        menu.Items.Add(itemLogin);
+        _itemLogin  = new ToolStripMenuItem("Iniciar sesión...", null, OnLoginClick);
+        _itemLogout = new ToolStripMenuItem("Cerrar sesión", null, OnLogoutClick)
+            { ForeColor = Color.FromArgb(0xff, 0x60, 0x60) };
+
+        menu.Items.Add(_itemLogin);
+        menu.Items.Add(_itemLogout);
 
         var itemWeb = new ToolStripMenuItem("Abrir FotoShow.online", null, (_, _) =>
             OpenUrl(_config.BackendUrl));
@@ -51,9 +58,8 @@ public class TrayApp : ApplicationContext
 
         menu.Items.Add(new ToolStripSeparator());
 
-        // Solo en desarrollo: pegar token manualmente (hasta que el installer registre fotoshow://)
-        if (!_config.IsLoggedIn)
-            menu.Items.Add(new ToolStripMenuItem("Pegar token JWT (dev)...", null, OnPasteTokenClick));
+        // Pegar token manualmente (hasta que el installer registre fotoshow://)
+        menu.Items.Add(new ToolStripMenuItem("Iniciar sesión con token...", null, OnPasteTokenClick));
 
         menu.Items.Add(new ToolStripMenuItem("Salir", null, OnExitClick));
 
@@ -78,15 +84,64 @@ public class TrayApp : ApplicationContext
                 itemQueue.Text = $"Cola: {count} fotos pendientes";
         };
         _queue.OnProgressChanged += (done, total, file) => _popup.ShowProgress(done, total, file);
-        _queue.OnSyncDone        += total               => _popup.ShowDone(total);
+        _queue.OnSyncDone += total =>
+        {
+            _popup.ShowDone(total);
+            _tray.ShowBalloonTip(4000, "FotoShow",
+                $"✓  {total} foto{(total == 1 ? "" : "s")} subida{(total == 1 ? "" : "s")} a FotoShow",
+                ToolTipIcon.Info);
+        };
 
         _pipe.OnLog += Log;
         _pipe.OnAddFile += path => _queue.EnqueueFile(path);
-        _pipe.OnAddFolder += path => _queue.EnqueueFolder(path);
+        _pipe.OnAddFolder += path =>
+        {
+            // Crear galería automáticamente con el nombre de la carpeta
+            var folderName = Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            if (string.IsNullOrEmpty(folderName)) folderName = path;
+
+            if (_config.IsLoggedIn)
+            {
+                _ = Task.Run(async () =>
+                {
+                    string? galleryId = null;
+                    try { galleryId = await _backend.CreateGalleryAsync(folderName); }
+                    catch { Log($"No se pudo crear galería '{folderName}' — subiendo sin galería"); }
+                    _queue.EnqueueFolder(path, galleryId);
+                });
+            }
+            else
+            {
+                _queue.EnqueueFolder(path, null);
+            }
+        };
+
+        _pipe.OnAuthToken += jwt =>
+        {
+            _config.JwtToken = jwt;
+            _config.PhotographerEmail = ExtractEmailFromJwt(jwt) ?? "Fotógrafo";
+            _config.PhotographerName  = _config.PhotographerEmail;
+            _config.Save();
+            _backend.SetToken(jwt);
+            _ = _backend.StartListeningAsync(_appCts.Token);
+            RefreshAuthMenu();
+            _popup.ShowMessage("✓  Sesión iniciada");
+        };
 
         _backend.OnLog += Log;
-        _backend.OnTokenExpired += () => _popup.ShowMessage("⚠  Sesión expirada — iniciá sesión nuevamente.");
+        _backend.OnTokenExpired += () =>
+        {
+            _popup.ShowMessage("⚠  Sesión expirada — iniciá sesión nuevamente.");
+            _config.JwtToken = null;
+            _config.Save();
+            RefreshAuthMenu();
+        };
         _backend.OnSaleReceived += OnSaleNotification;
+
+        // Actualizar menú con estado inicial (puede haber un JWT guardado)
+        if (_config.IsLoggedIn && string.IsNullOrEmpty(_config.PhotographerEmail) && !string.IsNullOrEmpty(_config.JwtToken))
+            _config.PhotographerEmail = ExtractEmailFromJwt(_config.JwtToken) ?? _config.PhotographerName;
+        RefreshAuthMenu();
 
         // ─── arranque de servicios ─────────────────────────────────────────────
         _ = InitAsync();
@@ -94,13 +149,84 @@ public class TrayApp : ApplicationContext
 
     private async Task InitAsync()
     {
-        await _db.InitAsync();
-        await _ai.EnsureWorkerRunningAsync(_appCts.Token);
+        try
+        {
+            await _db.InitAsync();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Error iniciando base de datos:\n{ex.Message}", "FotoShow — Error crítico",
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
+            Application.Exit();
+            return;
+        }
+
+        // Arrancar cola y pipe INMEDIATAMENTE — no esperar a la IA
         _pipe.Start();
         _queue.Start();
 
         if (_config.IsLoggedIn)
             _ = _backend.StartListeningAsync(_appCts.Token);
+
+        // IA en background — la cola funciona sin ella (solo sin embedding facial)
+        _ = InitAiAsync();
+    }
+
+    // ─── inicio de IA en background ────────────────────────────────────────────
+
+    private async Task InitAiAsync()
+    {
+        _popup.ShowMessage("⚙  Iniciando motor de IA (1ª vez: descargando modelos)...", autoHide: false);
+        try
+        {
+            var aiOk = await _ai.EnsureWorkerRunningAsync(_appCts.Token);
+            _popup.ShowMessage(aiOk
+                ? "✓  Motor de IA listo"
+                : "⚠  IA no disponible — fotos se subirán sin análisis facial", autoHide: true);
+        }
+        catch
+        {
+            _popup.ShowMessage("⚠  IA no disponible — fotos se subirán sin análisis facial", autoHide: true);
+        }
+    }
+
+    // ─── galería ───────────────────────────────────────────────────────────────
+
+    private void ShowGalleryDialogAndEnqueue(string folderPath)
+    {
+        List<GalleryInfo> galleries = [];
+
+        // Cargar galerías del backend si el usuario está logueado
+        if (_config.IsLoggedIn)
+        {
+            try
+            {
+                galleries = _backend.ListGalleriesAsync().GetAwaiter().GetResult();
+            }
+            catch { /* sin conexión — continuar con lista vacía */ }
+        }
+
+        using var dlg = new GalleryDialog(Path.GetFileName(folderPath), galleries);
+        if (dlg.ShowDialog() != DialogResult.OK) return;
+
+        var selection = dlg.SelectedGalleryId;
+
+        if (selection?.StartsWith("new:") == true)
+        {
+            // Crear la galería y esperar el ID
+            var name = selection["new:".Length..];
+            string? newId = null;
+            if (_config.IsLoggedIn)
+            {
+                try { newId = _backend.CreateGalleryAsync(name).GetAwaiter().GetResult(); }
+                catch { }
+            }
+            _queue.EnqueueFolder(folderPath, newId);
+        }
+        else
+        {
+            _queue.EnqueueFolder(folderPath, selection);
+        }
     }
 
     // ─── venta recibida ────────────────────────────────────────────────────────
@@ -142,8 +268,8 @@ public class TrayApp : ApplicationContext
     {
         if (_config.IsLoggedIn)
         {
-            // Abrir panel del fotógrafo
-            OpenUrl($"{_config.BackendUrl}/dashboard");
+            // Abrir panel del fotógrafo pasando el JWT para crear sesión de browser
+            OpenUrl(_backend.GetDashboardUrl());
         }
         else
         {
@@ -182,10 +308,12 @@ public class TrayApp : ApplicationContext
             var jwt = txt.Text.Trim();
             if (string.IsNullOrEmpty(jwt)) return;
             _config.JwtToken = jwt;
-            _config.PhotographerName = "Fotógrafo";
+            _config.PhotographerEmail = ExtractEmailFromJwt(jwt) ?? "Fotógrafo";
+            _config.PhotographerName  = _config.PhotographerEmail;
             _config.Save();
             _backend.SetToken(jwt);
             _ = _backend.StartListeningAsync(_appCts.Token);
+            RefreshAuthMenu();
             _popup.ShowMessage("✓  Sesión iniciada");
             form.Close();
         };
@@ -207,6 +335,67 @@ public class TrayApp : ApplicationContext
         _ = _backend.DisposeAsync().AsTask();
         _db.Dispose();
         Application.Exit();
+    }
+
+    // ─── auth menu ─────────────────────────────────────────────────────────────
+
+    private void RefreshAuthMenu()
+    {
+        void Update()
+        {
+            if (_config.IsLoggedIn)
+            {
+                _itemLogin.Text    = $"Sesión: {_config.PhotographerEmail ?? _config.PhotographerName ?? "Fotógrafo"}";
+                _itemLogin.Enabled = true;
+                _itemLogout.Visible = true;
+            }
+            else
+            {
+                _itemLogin.Text    = "Iniciar sesión...";
+                _itemLogin.Enabled = true;
+                _itemLogout.Visible = false;
+            }
+        }
+
+        if (_itemLogin.Owner?.InvokeRequired == true)
+            _itemLogin.Owner.Invoke(Update);
+        else
+            Update();
+    }
+
+    private void OnLogoutClick(object? sender, EventArgs e)
+    {
+        _config.JwtToken = null;
+        _config.PhotographerName = null;
+        _config.PhotographerEmail = null;
+        _config.Save();
+        RefreshAuthMenu();
+        _popup.ShowMessage("Sesión cerrada.");
+    }
+
+    private static string? ExtractEmailFromJwt(string jwt)
+    {
+        try
+        {
+            var parts = jwt.Split('.');
+            if (parts.Length < 2) return null;
+
+            // Base64url → Base64
+            var payload = parts[1].Replace('-', '+').Replace('_', '/');
+            payload += new string('=', (4 - payload.Length % 4) % 4);
+
+            var json = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(payload));
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("email", out var email) && email.GetString() is string e and not "")
+                return e;
+            if (root.TryGetProperty("sub", out var sub))
+                return sub.GetString();
+
+            return null;
+        }
+        catch { return null; }
     }
 
     // ─── helpers ───────────────────────────────────────────────────────────────

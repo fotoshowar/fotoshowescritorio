@@ -11,8 +11,9 @@ public class TrayConfig
     public string? JwtToken { get; set; }
     public string? PhotographerId { get; set; }
     public string? PhotographerName { get; set; }
+    public string? PhotographerEmail { get; set; }
     public bool AutoProcessEnabled { get; set; } = true;
-    public int MaxConcurrentProcessing { get; set; } = 2;
+    public int MaxConcurrentProcessing { get; set; } = 1;
     public int ThumbnailSize { get; set; } = 400;
 
     // ─── persistencia ──────────────────────────────────────────────────────────
