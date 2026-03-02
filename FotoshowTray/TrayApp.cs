@@ -15,6 +15,7 @@ public class TrayApp : ApplicationContext
     private readonly BackendClient _backend;
     private readonly PhotoQueue _queue;
     private readonly PipeServer _pipe;
+    private readonly TrayPopup _popup;
     private readonly CancellationTokenSource _appCts = new();
 
     public TrayApp()
@@ -25,6 +26,7 @@ public class TrayApp : ApplicationContext
         _backend = new BackendClient(_config);
         _queue = new PhotoQueue(_db, _ai, _backend, _config);
         _pipe = new PipeServer();
+        _popup = new TrayPopup();
 
         // ─── menú del tray ─────────────────────────────────────────────────────
         var menu = new ContextMenuStrip();
@@ -69,13 +71,15 @@ public class TrayApp : ApplicationContext
             else
                 itemQueue.Text = $"Cola: {count} fotos pendientes";
         };
+        _queue.OnProgressChanged += (done, total, file) => _popup.ShowProgress(done, total, file);
+        _queue.OnSyncDone        += total               => _popup.ShowDone(total);
 
         _pipe.OnLog += Log;
         _pipe.OnAddFile += path => _queue.EnqueueFile(path);
         _pipe.OnAddFolder += path => _queue.EnqueueFolder(path);
 
         _backend.OnLog += Log;
-        _backend.OnTokenExpired += () => Log("Token expirado — iniciá sesión nuevamente.");
+        _backend.OnTokenExpired += () => _popup.ShowMessage("⚠  Sesión expirada — iniciá sesión nuevamente.");
         _backend.OnSaleReceived += OnSaleNotification;
 
         // ─── arranque de servicios ─────────────────────────────────────────────
@@ -98,11 +102,7 @@ public class TrayApp : ApplicationContext
     private void OnSaleNotification(SaleNotification sale)
     {
         Log($"¡Venta! foto {sale.BackendPhotoId} para {sale.BuyerEmail}");
-        _tray.ShowBalloonTip(
-            5000, "FotoShow — Nueva venta",
-            $"Foto vendida en {sale.EventTitle}\nEntregando...",
-            ToolTipIcon.Info
-        );
+        _popup.ShowSale(sale.EventTitle, sale.BuyerEmail);
 
         _ = Task.Run(async () =>
         {
@@ -153,6 +153,7 @@ public class TrayApp : ApplicationContext
     {
         _appCts.Cancel();
         _tray.Visible = false;
+        _popup.Dispose();
         _pipe.Dispose();
         _queue.Dispose();
         _ai.Dispose();

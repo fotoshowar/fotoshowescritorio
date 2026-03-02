@@ -25,6 +25,8 @@ public class PhotoQueue : IDisposable
 
     public event Action<string>? OnLog;
     public event Action<int>? OnQueueCountChanged;
+    public event Action<int, int, string>? OnProgressChanged;  // done, total, currentFile
+    public event Action<int>? OnSyncDone;                      // totalSynced
 
     private static readonly string ThumbnailDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -86,25 +88,43 @@ public class PhotoQueue : IDisposable
     {
         var sem = new SemaphoreSlim(_config.MaxConcurrentProcessing);
         var ct = _cts.Token;
+        int done = 0;
+        int batchTotal = 0;
 
         while (!ct.IsCancellationRequested)
         {
             if (!_pendingPaths.TryDequeue(out var path))
             {
-                await Task.Delay(500, ct).ContinueWith(_ => { }); // sin throw en cancel
+                // Si terminó un batch → notificar "listo"
+                if (done > 0 && _pendingPaths.IsEmpty)
+                {
+                    OnSyncDone?.Invoke(done);
+                    done = 0;
+                    batchTotal = 0;
+                }
+                await Task.Delay(500, ct).ContinueWith(_ => { });
                 continue;
             }
+
+            // Actualizar total del batch actual
+            batchTotal = done + _pendingPaths.Count + 1;
 
             await sem.WaitAsync(ct).ContinueWith(_ => { });
             if (ct.IsCancellationRequested) break;
 
+            var capturedPath = path;
+            var capturedDone = done;
+            OnProgressChanged?.Invoke(capturedDone, batchTotal, capturedPath);
+
             _ = Task.Run(async () =>
             {
-                try { await ProcessOneAsync(path, ct); }
+                try { await ProcessOneAsync(capturedPath, ct); }
                 finally
                 {
+                    Interlocked.Increment(ref done);
                     sem.Release();
                     OnQueueCountChanged?.Invoke(_pendingPaths.Count);
+                    OnProgressChanged?.Invoke(done, batchTotal, capturedPath);
                 }
             }, ct);
         }
