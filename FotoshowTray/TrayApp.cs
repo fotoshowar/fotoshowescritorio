@@ -96,24 +96,11 @@ public class TrayApp : ApplicationContext
         _pipe.OnAddFile += path => _queue.EnqueueFile(path);
         _pipe.OnAddFolder += path =>
         {
-            // Crear galería automáticamente con el nombre de la carpeta
-            var folderName = Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-            if (string.IsNullOrEmpty(folderName)) folderName = path;
-
-            if (_config.IsLoggedIn)
-            {
-                _ = Task.Run(async () =>
-                {
-                    string? galleryId = null;
-                    try { galleryId = await _backend.CreateGalleryAsync(folderName); }
-                    catch { Log($"No se pudo crear galería '{folderName}' — subiendo sin galería"); }
-                    _queue.EnqueueFolder(path, galleryId);
-                });
-            }
+            // Mostrar diálogo en el hilo UI para elegir/crear galería con todos los datos
+            if (_itemLogin.Owner?.InvokeRequired == true)
+                _itemLogin.Owner.Invoke(() => ShowGalleryDialogAndEnqueue(path));
             else
-            {
-                _queue.EnqueueFolder(path, null);
-            }
+                ShowGalleryDialogAndEnqueue(path);
         };
 
         _pipe.OnAuthToken += jwt =>
@@ -206,26 +193,30 @@ public class TrayApp : ApplicationContext
             catch { /* sin conexión — continuar con lista vacía */ }
         }
 
-        using var dlg = new GalleryDialog(Path.GetFileName(folderPath), galleries);
+        var folderName = Path.GetFileName(folderPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        if (string.IsNullOrEmpty(folderName)) folderName = folderPath;
+
+        using var dlg = new GalleryDialog(folderName, galleries);
         if (dlg.ShowDialog() != DialogResult.OK) return;
 
-        var selection = dlg.SelectedGalleryId;
-
-        if (selection?.StartsWith("new:") == true)
+        if (dlg.NewGalleryData is { } newData)
         {
-            // Crear la galería y esperar el ID
-            var name = selection["new:".Length..];
-            string? newId = null;
-            if (_config.IsLoggedIn)
+            // Crear galería con todos los campos usando el endpoint completo
+            _ = Task.Run(async () =>
             {
-                try { newId = _backend.CreateGalleryAsync(name).GetAwaiter().GetResult(); }
-                catch { }
-            }
-            _queue.EnqueueFolder(folderPath, newId);
+                string? galleryId = null;
+                if (_config.IsLoggedIn)
+                {
+                    try { galleryId = await _backend.CreateGalleryFullAsync(newData); }
+                    catch { Log($"No se pudo crear galería '{newData.Name}' — subiendo sin galería"); }
+                }
+                _queue.EnqueueFolder(folderPath, galleryId);
+            });
         }
         else
         {
-            _queue.EnqueueFolder(folderPath, selection);
+            // Galería existente seleccionada
+            _queue.EnqueueFolder(folderPath, dlg.SelectedGalleryId);
         }
     }
 

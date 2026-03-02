@@ -244,6 +244,40 @@ public class BackendClient : IAsyncDisposable
         }
     }
 
+    /// <summary>Crea galería con todos los campos usando POST /api/galleries/</summary>
+    public async Task<string?> CreateGalleryFullAsync(NewGalleryData data, CancellationToken ct = default)
+    {
+        try
+        {
+            var payload = new Dictionary<string, object?> { ["name"] = data.Name };
+            if (data.Location is not null)      payload["location"]       = data.Location;
+            if (data.EventDate.HasValue)        payload["event_date"]     = data.EventDate.Value.ToString("yyyy-MM-dd");
+            if (data.PricePerPhoto.HasValue)    payload["price_per_photo"] = data.PricePerPhoto.Value;
+            payload["discount_rules"] = Array.Empty<object>();
+
+            var body = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+            var resp = await _http.PostAsync("/api/galleries/", body, ct);
+
+            if (!resp.IsSuccessStatusCode)
+            {
+                OnLog?.Invoke($"CreateGalleryFull error {resp.StatusCode}: {await resp.Content.ReadAsStringAsync(ct)}");
+                return null;
+            }
+            var json = await resp.Content.ReadAsStringAsync(ct);
+            using var doc = JsonDocument.Parse(json);
+            var idEl = doc.RootElement.GetProperty("id");
+            return idEl.ValueKind == JsonValueKind.Number
+                ? idEl.GetInt32().ToString()
+                : idEl.GetString();
+        }
+        catch (Exception ex)
+        {
+            OnLog?.Invoke($"CreateGalleryFull error: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>Crea galería con solo nombre (fallback rápido).</summary>
     public async Task<string?> CreateGalleryAsync(string name, CancellationToken ct = default)
     {
         try
