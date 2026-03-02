@@ -50,6 +50,11 @@ public class TrayApp : ApplicationContext
         menu.Items.Add(itemWeb);
 
         menu.Items.Add(new ToolStripSeparator());
+
+        // Solo en desarrollo: pegar token manualmente (hasta que el installer registre fotoshow://)
+        if (!_config.IsLoggedIn)
+            menu.Items.Add(new ToolStripMenuItem("Pegar token JWT (dev)...", null, OnPasteTokenClick));
+
         menu.Items.Add(new ToolStripMenuItem("Salir", null, OnExitClick));
 
         // ─── notify icon ───────────────────────────────────────────────────────
@@ -146,6 +151,47 @@ public class TrayApp : ApplicationContext
             // El backend redirige a fotoshow://auth?token=... que capturamos con URI scheme
             OpenUrl(_backend.GetDesktopLoginUrl());
         }
+    }
+
+    // ─── pegar token (dev) ────────────────────────────────────────────────────
+
+    private void OnPasteTokenClick(object? sender, EventArgs e)
+    {
+        // Leer del clipboard si hay algo
+        var clipboard = Clipboard.ContainsText() ? Clipboard.GetText().Trim() : "";
+        var token = clipboard.StartsWith("eyJ") ? clipboard : "";
+
+        using var form  = new Form
+        {
+            Text            = "FotoShow — Token JWT",
+            Width           = 420,
+            Height          = 160,
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            StartPosition   = FormStartPosition.CenterScreen,
+            MaximizeBox     = false,
+            MinimizeBox     = false,
+            BackColor       = Color.FromArgb(0x1a, 0x1a, 0x1a),
+            ForeColor       = Color.White,
+        };
+        var lbl = new Label { Text = "Pegá el JWT que devuelve /api/auth/google/desktop:", Dock = DockStyle.Top, Height = 32, ForeColor = Color.FromArgb(0x7C, 0xFC, 0x00), Padding = new Padding(8, 8, 0, 0) };
+        var txt = new TextBox { Text = token, Dock = DockStyle.Top, Height = 28, BackColor = Color.FromArgb(0x2a, 0x2a, 0x2a), ForeColor = Color.White, BorderStyle = BorderStyle.FixedSingle };
+        var btn = new Button  { Text = "Guardar", Dock = DockStyle.Bottom, Height = 32, BackColor = Color.FromArgb(0x7C, 0xFC, 0x00), ForeColor = Color.Black, FlatStyle = FlatStyle.Flat };
+
+        btn.Click += (_, _) =>
+        {
+            var jwt = txt.Text.Trim();
+            if (string.IsNullOrEmpty(jwt)) return;
+            _config.JwtToken = jwt;
+            _config.PhotographerName = "Fotógrafo";
+            _config.Save();
+            _backend.SetToken(jwt);
+            _ = _backend.StartListeningAsync(_appCts.Token);
+            _popup.ShowMessage("✓  Sesión iniciada");
+            form.Close();
+        };
+
+        form.Controls.AddRange([lbl, txt, btn]);
+        form.ShowDialog();
     }
 
     // ─── salida ────────────────────────────────────────────────────────────────
